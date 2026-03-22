@@ -98,9 +98,9 @@ def load_data() -> pd.DataFrame:
     print(f"Parsing Excel: {DATA_PATH}")
     raw = pd.read_excel(DATA_PATH, index_col=0, engine="openpyxl")
 
-    raw.index = pd.DatetimeIndex(raw.index).tz_localize(
-        TIMEZONE, ambiguous=False, nonexistent="shift_forward"
-    )
+    # OnlineToky.xlsx timestamps are UTC (verified: G peaks at 10h UTC ≈ solar noon)
+    # Normal.xlsx timestamps are Prague local time — both end up in TIMEZONE after conversion
+    raw.index = pd.DatetimeIndex(raw.index).tz_localize("UTC").tz_convert(TIMEZONE)
     raw.index.name = "timestamp"
     raw.columns = raw.columns.str.strip()
 
@@ -158,9 +158,11 @@ def aggregate_regions(df: pd.DataFrame, weight_by: str = "year") -> pd.DataFrame
     if weight_by == "year":
         annual_sum = hist_H.groupby(hist_H.index.year).sum()
         annual_w   = annual_sum.div(annual_sum.sum(axis=1), axis=0)
+        overall_w  = annual_w.mean()  # fallback for years not in annual_w (e.g. future)
         year_map   = pd.Series(H.index.year, index=H.index)
+        w_lookup   = annual_w.to_dict(orient="index")
         weights    = pd.DataFrame(
-            year_map.map(annual_w.to_dict(orient="index")).tolist(),
+            [w_lookup.get(yr, overall_w.to_dict()) for yr in year_map],
             index=H.index, columns=REGIONS
         )
         print("  Region weights (annual share of H_total):")
